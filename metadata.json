@@ -1,0 +1,7 @@
+{
+  "name": "Sasurie iTrans",
+  "description": "Intelligent Transport Management System - College Project Prototype",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
