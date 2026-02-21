@@ -33,6 +33,14 @@
 
 ---
 
+## 📸 Screenshots
+
+| Welcome Screen | Student Dashboard | Live Tracking |
+|:---:|:---:|:---:|
+| *(Add Screenshot)* | *(Add Screenshot)* | *(Add Screenshot)* |
+
+---
+
 ## ⚡ Getting Started
 
 ### Prerequisites

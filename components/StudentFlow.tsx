@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from './Layout';
 import { GoogleGenAI } from "@google/genai";
 import jsQR from 'jsqr';
-import { STUDENTS_DB, BUS_FLEET, AI_SUGGESTIONS, MOCK_NOTIFICATIONS } from '../constants';
+import { AI_SUGGESTIONS } from '../constants';
+import { dataService } from '@/services/dataService';
+import { Student, BusInfo, Notification } from '../types';
 import { 
   Bus, MapPin, QrCode, MessageSquare, Bell, User, 
-  AlertTriangle, CheckCircle, Navigation, Send, X, Camera, LogOut, ChevronRight, Clock, Calendar
+  AlertTriangle, CheckCircle, Navigation, Send, X, Camera, LogOut, ChevronRight, Clock, Calendar, MessageCircle
 } from 'lucide-react';
 
 interface StudentFlowProps {
@@ -16,25 +18,66 @@ interface StudentFlowProps {
 export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout }) => {
   const [activeTab, setActiveTab] = useState<'HOME' | 'TRACK' | 'SCAN' | 'CHAT' | 'PROFILE' | 'NOTIFS' | 'COMPLAINT'>('HOME');
   
-  // Fetch actual student data
-  const student = STUDENTS_DB.find(s => s.regNo === studentId) || STUDENTS_DB[0];
-  
-  // State for Bus Selection (Default to student's assigned bus)
-  const [selectedRoute, setSelectedRoute] = useState(student.busRouteNo);
+  const [student, setStudent] = useState<Student | null>(null);
+  const [busFleet, setBusFleet] = useState<BusInfo[]>([]);
+  const [selectedRoute, setSelectedRoute] = useState<string>('');
+  const [loadingData, setLoadingData] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoadingData(true);
+      const studentData = await dataService.getStudent(studentId);
+      const buses = await dataService.getAllBuses();
+      
+      if (studentData) {
+        setStudent(studentData);
+        setSelectedRoute(studentData.busRouteNo);
+      }
+      setBusFleet(buses);
+      setLoadingData(false);
+    };
+    loadData();
+  }, [studentId]);
   
   // Get the currently selected bus details
-  const selectedBus = BUS_FLEET.find(b => b.routeNo === selectedRoute) || BUS_FLEET[0];
+  const selectedBus = busFleet.find(b => b.routeNo === selectedRoute) || busFleet[0];
   
   const [attendanceStatus, setAttendanceStatus] = useState<'PENDING' | 'PRESENT' | 'ABSENT'>('PENDING');
 
   // Load attendance state from local storage on mount
   useEffect(() => {
+    if (!student) return;
     const today = new Date().toDateString();
     const stored = localStorage.getItem(`attendance_${student.regNo}_${today}`);
     if (stored === 'PRESENT') {
       setAttendanceStatus('PRESENT');
     }
-  }, [student.regNo]);
+  }, [student]);
+
+  if (loadingData) {
+    return (
+      <Layout variant="student">
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2E1A47]"></div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!student || !selectedBus) {
+    return (
+      <Layout variant="student">
+        <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-600 mb-4">
+            <AlertTriangle size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">Data Not Found</h2>
+          <p className="text-gray-500 mt-2">Could not retrieve student or bus details.</p>
+          <button onClick={onLogout} className="mt-6 text-[#2E1A47] font-bold underline">Return to Login</button>
+        </div>
+      </Layout>
+    );
+  }
 
   // --- DASHBOARD ---
   const Dashboard = () => (
@@ -79,7 +122,7 @@ export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout })
                   onChange={(e) => setSelectedRoute(e.target.value)}
                   className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-lg focus:ring-[#FFC107] focus:border-[#FFC107] block p-3 pr-8 font-semibold appearance-none"
                 >
-                  {BUS_FLEET.map(b => (
+                  {busFleet.map(b => (
                     <option key={b.routeNo} value={b.routeNo}>
                       Route {b.routeNo} : {b.routeName}
                     </option>
@@ -124,9 +167,9 @@ export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout })
             color="text-[#2E1A47]"
           />
           <FeatureBtn 
-            icon={<User size={24} />} 
-            label="Profile" 
-            onClick={() => setActiveTab('PROFILE')} 
+            icon={<MessageCircle size={24} />} 
+            label="Feedback" 
+            onClick={() => setActiveTab('COMPLAINT')} 
             color="text-[#2E1A47]"
           />
           <FeatureBtn 
@@ -400,7 +443,7 @@ export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout })
   // --- AI CHAT ---
   const ChatScreen = () => {
     const [messages, setMessages] = useState<{role: 'user' | 'model', text: string}[]>([
-      { role: 'model', text: "Hello! I can help you with bus timings, routes, and attendance." }
+      { role: 'model', text: `Hello ${student.name}! I can help you with live tracking for Route ${selectedBus.routeNo}, attendance, and schedules.` }
     ]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -411,18 +454,59 @@ export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout })
     const handleSend = async (text: string) => {
       const userText = text || input;
       if (!userText.trim()) return;
+      
       setMessages(prev => [...prev, { role: 'user', text: userText }]);
       setInput('');
       setLoading(true);
 
-      setTimeout(() => {
-          let response = "I'm checking the live status...";
-          if (userText.toLowerCase().includes('where')) response = `Bus ${selectedBus.routeNo} is currently near College Main Gate.`;
-          else if (userText.toLowerCase().includes('late')) response = selectedBus.status === 'Delayed' ? `Yes, it is delayed by ${selectedBus.delayMin} mins.` : "No, it is running on time.";
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
           
-          setMessages(prev => [...prev, { role: 'model', text: response }]);
+          const systemInstruction = `
+You are the intelligent assistant for Sasurie iTrans, a college transport system.
+You are speaking to: ${student.name} (RegNo: ${student.regNo}).
+Their assigned Route: ${student.busRouteNo} (Stop: ${student.stoppingName}).
+
+CURRENT LIVE STATUS (Route ${selectedBus.routeNo}):
+- Status: ${selectedBus.status}
+- Delay: ${selectedBus.delayMin || 0} minutes
+- Driver: ${selectedBus.driverName}
+- Location: Lat ${selectedBus.currentLocation.lat}, Lng ${selectedBus.currentLocation.lng}
+- Total Students on board: ${selectedBus.totalStudents}
+
+ALL ACTIVE BUSES:
+${JSON.stringify(busFleet.map(b => ({
+  route: b.routeNo,
+  name: b.routeName,
+  status: b.status,
+  delay: b.delayMin || 0
+})))}
+
+INSTRUCTIONS:
+1. Provide accurate, real-time answers based ONLY on the data provided above.
+2. If the student asks "Where is my bus?", use the "CURRENT LIVE STATUS" data.
+3. If the student asks about other routes, check "ALL ACTIVE BUSES".
+4. Keep responses concise, friendly, and professional.
+5. Do not make up information. If data is missing, say so.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: "gemini-3-flash-preview",
+              contents: userText,
+              config: {
+                  systemInstruction: systemInstruction,
+              }
+          });
+
+          const aiText = response.text || "I received your message but couldn't generate a response.";
+          setMessages(prev => [...prev, { role: 'model', text: aiText }]);
+
+      } catch (error) {
+          console.error("AI Error:", error);
+          setMessages(prev => [...prev, { role: 'model', text: "I'm having trouble connecting to the server. Please try again." }]);
+      } finally {
           setLoading(false);
-      }, 1000);
+      }
     };
 
     return (
@@ -469,12 +553,25 @@ export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout })
 
   // --- NOTIFICATIONS ---
   const NotificationsScreen = () => {
-    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [loadingNotifs, setLoadingNotifs] = useState(true);
 
     useEffect(() => {
-      const stored = JSON.parse(localStorage.getItem('sasurie_notifications') || '[]');
-      if (stored.length > 0) setNotifications([...stored, ...MOCK_NOTIFICATIONS]);
+      const loadNotifs = async () => {
+        setLoadingNotifs(true);
+        const serverNotifs = await dataService.getNotifications();
+        const stored = JSON.parse(localStorage.getItem('sasurie_notifications') || '[]');
+        // Combine local (newly pushed via socket/local logic if any) and server
+        // For now just simple merge
+        setNotifications([...stored, ...serverNotifs]);
+        setLoadingNotifs(false);
+      };
+      loadNotifs();
     }, []);
+
+    if (loadingNotifs) {
+      return <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Loading updates...</div>;
+    }
 
     return (
       <div className="space-y-3 animate-fadeIn">
@@ -499,15 +596,27 @@ export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout })
 
   // --- COMPLAINTS ---
   const ComplaintScreen = () => {
-    const [category, setCategory] = useState('Bus Delay');
+    const [category, setCategory] = useState('Driver');
     const [desc, setDesc] = useState('');
     const [submitted, setSubmitted] = useState(false);
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
       if (!desc) return;
-      const newComplaint = { id: Date.now(), studentName: student.name, category, desc, time: new Date().toLocaleString() };
+      const newComplaint = { 
+        // id: Date.now(), // Let Supabase handle ID if possible, or send it if schema allows
+        studentName: student.name, 
+        category, 
+        desc, 
+        time: new Date().toLocaleString() 
+      };
+      
+      // Submit to Supabase
+      await dataService.submitComplaint(newComplaint);
+
+      // Also save to local storage for offline/fallback/immediate UI update
       const existing = JSON.parse(localStorage.getItem('sasurie_complaints') || '[]');
-      localStorage.setItem('sasurie_complaints', JSON.stringify([newComplaint, ...existing]));
+      localStorage.setItem('sasurie_complaints', JSON.stringify([{ ...newComplaint, id: Date.now() }, ...existing]));
+      
       setSubmitted(true); setDesc('');
     };
 
@@ -523,23 +632,40 @@ export const StudentFlow: React.FC<StudentFlowProps> = ({ studentId, onLogout })
     }
 
     return (
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-         <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-6">Report an Issue</h2>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
+         <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-6">Student Feedback</h2>
          <div className="space-y-5">
            <div>
-             <label className="block text-xs font-semibold text-gray-500 mb-1.5">Category</label>
-             <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full p-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-1 focus:ring-[#2E1A47]">
-               <option>Bus Delay</option>
-               <option>Driver Behavior</option>
-               <option>Cleanliness</option>
-               <option>Other</option>
-             </select>
+             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Issue Type</label>
+             <div className="relative">
+               <select 
+                  value={category} 
+                  onChange={(e) => setCategory(e.target.value)} 
+                  className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 font-medium focus:ring-2 focus:ring-[#FFC107] focus:border-transparent outline-none appearance-none transition-all"
+               >
+                 <option value="Driver">Driver Issue</option>
+                 <option value="Maintenance">Bus Maintenance</option>
+                 <option value="Others">Others</option>
+               </select>
+               <ChevronRight className="absolute right-3 top-4 text-gray-400 rotate-90 pointer-events-none" size={16} />
+             </div>
            </div>
            <div>
-             <label className="block text-xs font-semibold text-gray-500 mb-1.5">Description</label>
-             <textarea value={desc} onChange={(e) => setDesc(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg h-32 text-sm text-gray-900 focus:ring-1 focus:ring-[#2E1A47]" placeholder="Please describe the issue in detail..."></textarea>
+             <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Description</label>
+             <textarea 
+               value={desc} 
+               onChange={(e) => setDesc(e.target.value)} 
+               className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl h-40 text-sm text-gray-900 focus:ring-2 focus:ring-[#FFC107] focus:border-transparent outline-none resize-none transition-all" 
+               placeholder="Please describe the issue in detail..."
+             ></textarea>
            </div>
-           <button onClick={handleSubmit} className="w-full bg-[#2E1A47] text-white py-3 rounded-lg font-bold shadow-sm hover:bg-[#3d235e]">SUBMIT REPORT</button>
+           <button 
+             onClick={handleSubmit} 
+             className="w-full bg-[#2E1A47] text-white py-4 rounded-xl font-bold shadow-lg hover:bg-[#4527a0] flex items-center justify-center gap-3 transition-transform active:scale-95"
+           >
+             <Send size={20} className="text-[#FFC107]" /> 
+             <span>SUBMIT COMPLAINT</span>
+           </button>
          </div>
       </div>
     );

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Layout } from './Layout';
-import { BUS_FLEET, STUDENTS_DB } from '../constants';
+import { dataService } from '@/services/dataService';
+import { BusInfo, Student } from '../types';
 import { 
   Bus, Users, AlertTriangle, Map, Navigation, 
   BarChart, Bell, Settings, Search, X, CheckCircle, MessageCircle, Send
@@ -14,6 +15,32 @@ interface AdminFlowProps {
 export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<'HOME' | 'BUSES' | 'STUDENTS' | 'DELAYED' | 'MAP_LIST' | 'QR' | 'FEEDBACK' | 'BROADCAST'>('HOME');
   const [selectedBus, setSelectedBus] = useState<string | null>(null);
+  
+  const [busFleet, setBusFleet] = useState<BusInfo[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      const buses = await dataService.getAllBuses();
+      const allStudents = await dataService.getAllStudents();
+      setBusFleet(buses);
+      setStudents(allStudents);
+      setLoading(false);
+    };
+    loadData();
+  }, []);
+
+  if (loading) {
+    return (
+      <Layout variant="admin">
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4A148C]"></div>
+        </div>
+      </Layout>
+    );
+  }
 
   // --- SUB-COMPONENTS ---
   
@@ -59,8 +86,8 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
   // --- SCREENS ---
 
   const Dashboard = () => {
-    const totalStudents = STUDENTS_DB.length;
-    const delayedBuses = BUS_FLEET.filter(b => b.status === 'Delayed').length;
+    const totalStudents = students.length;
+    const delayedBuses = busFleet.filter(b => b.status === 'Delayed').length;
     
     return (
       <div className="space-y-6 animate-fadeIn">
@@ -77,7 +104,7 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
         <div className="grid grid-cols-2 gap-4">
           <StatCard 
             label="Total Buses" 
-            value={BUS_FLEET.length} 
+            value={busFleet.length} 
             icon={<Bus size={20} />} 
             color="bg-blue-600"
             onClick={() => setActiveTab('BUSES')}
@@ -130,7 +157,7 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
   };
 
   const BusList = ({ filterDelayed = false }) => {
-    const buses = filterDelayed ? BUS_FLEET.filter(b => b.status === 'Delayed') : BUS_FLEET;
+    const buses = filterDelayed ? busFleet.filter(b => b.status === 'Delayed') : busFleet;
 
     return (
       <div className="space-y-4 animate-fadeIn">
@@ -165,7 +192,7 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
     return (
       <div className="space-y-4 animate-fadeIn">
         <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Track Fleet on Google Maps</h3>
-        {BUS_FLEET.map((bus) => (
+        {busFleet.map((bus) => (
           <ListItem 
             key={bus.routeNo}
             title={`Route ${bus.routeNo}`}
@@ -234,7 +261,7 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
            </div>
          </div>
 
-         {STUDENTS_DB.map((student, i) => (
+         {students.map((student, i) => (
            <ListItem 
              key={i}
              title={student.name}
@@ -248,7 +275,7 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
   };
 
   const QRGenerator = () => {
-    const [selectedRoute, setSelectedRoute] = useState(BUS_FLEET[0].routeNo);
+    const [selectedRoute, setSelectedRoute] = useState(busFleet[0]?.routeNo || '');
     const [qrValue, setQrValue] = useState('');
 
     const generate = () => {
@@ -272,7 +299,7 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
              value={selectedRoute}
              onChange={(e) => { setSelectedRoute(e.target.value); setQrValue(''); }}
            >
-             {BUS_FLEET.map(b => (
+             {busFleet.map(b => (
                <option key={b.routeNo} value={b.routeNo}>Bus {b.routeNo} - {b.routeName}</option>
              ))}
            </select>
@@ -339,7 +366,7 @@ export const AdminFlow: React.FC<AdminFlowProps> = ({ onLogout }) => {
                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#4A148C] text-gray-900"
             >
               <option value="ALL">All Students (General)</option>
-              {BUS_FLEET.map(b => (
+              {busFleet.map(b => (
                 <option key={b.routeNo} value={b.routeNo}>Bus {b.routeNo} Only</option>
               ))}
             </select>

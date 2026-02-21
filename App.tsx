@@ -4,19 +4,44 @@ import { Layout } from './components/Layout';
 import { StudentFlow } from './components/StudentFlow';
 import { AdminFlow } from './components/AdminFlow';
 import { Bus, GraduationCap, ShieldCheck, Clock } from 'lucide-react';
+import { dataService } from '@/services/dataService';
 
 const App: React.FC = () => {
   const [role, setRole] = useState<UserRole>(UserRole.NONE);
   const [viewState, setViewState] = useState<'WELCOME' | 'IDENTIFY' | 'LOGIN_FORM'>('WELCOME');
   const [selectedRoleForLogin, setSelectedRoleForLogin] = useState<UserRole | null>(null);
   const [studentIdInput, setStudentIdInput] = useState('732423243010'); // Default demo ID
+  const [loginError, setLoginError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  const handleLogin = async () => {
+    if (selectedRoleForLogin === UserRole.STUDENT) {
+      setIsVerifying(true);
+      setLoginError('');
+      try {
+        const student = await dataService.getStudent(studentIdInput);
+        if (student) {
+          setRole(UserRole.STUDENT);
+        } else {
+          setLoginError('Student not found. Please check Reg No.');
+        }
+      } catch (e) {
+        setLoginError('Connection error. Try again.');
+      } finally {
+        setIsVerifying(false);
+      }
+    } else {
+      // Admin login (mock)
+      setRole(UserRole.ADMIN);
+    }
+  };
 
   // --- 0. LOGGED IN STATE (PRIORITY CHECK) ---
   if (role === UserRole.STUDENT) {
     return (
       <StudentFlow 
         studentId={studentIdInput} 
-        onLogout={() => { setRole(UserRole.NONE); setViewState('WELCOME'); }} 
+        onLogout={() => { setRole(UserRole.NONE); setViewState('WELCOME'); setStudentIdInput(''); }} 
       />
     );
   }
@@ -198,11 +223,16 @@ const App: React.FC = () => {
             )}
 
             <button 
-              onClick={() => setRole(selectedRoleForLogin)}
-              className="w-full bg-[#FFC107] text-[#2E1A47] font-bold py-4 rounded-xl shadow-lg mt-4 hover:bg-white transition-colors"
+              onClick={handleLogin}
+              disabled={isVerifying}
+              className="w-full bg-[#FFC107] text-[#2E1A47] font-bold py-4 rounded-xl shadow-lg mt-4 hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              SECURE LOGIN
+              {isVerifying ? 'VERIFYING...' : 'SECURE LOGIN'}
             </button>
+            
+            {loginError && (
+              <p className="text-red-400 text-xs text-center font-bold mt-2 animate-pulse">{loginError}</p>
+            )}
           </div>
         </div>
       </Layout>
