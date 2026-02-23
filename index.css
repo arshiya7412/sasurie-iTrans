@@ -1,0 +1,10 @@
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f3f4f6;
+}
+
+/* Hide scrollbar for clean mobile look */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
