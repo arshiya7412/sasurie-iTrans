@@ -15,8 +15,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'import.meta.env.VITE_SUPABASE_URL': JSON.stringify("https://ovbvbqspbgozmcuouqms.supabase.co"),
         'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im92YnZicXNwYmdvem1jdW91cW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2Mzk1NjUsImV4cCI6MjA4NzIxNTU2NX0.M2ryvMy6UpkMsc6PzhVJnrQK1ZwoQCjuc72KK-dJ0pQ")
       },
